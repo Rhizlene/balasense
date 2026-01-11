@@ -1,6 +1,6 @@
-# 🏎️ BalaSense - Smart Racing Biometric Monitor
+# BalaSense - Smart Racing Biometric Monitor
 
-> **Système de monitoring biométrique embarqué pour pilotes de sport automobile**
+> Système de monitoring biométrique embarqué pour pilotes de sport automobile
 
 [![Status](https://img.shields.io/badge/status-in%20development-yellow)]()
 [![Hardware](https://img.shields.io/badge/hardware-ESP32-blue)]()
@@ -9,18 +9,18 @@
 
 ---
 
-## 📋 Description
+## Description
 
 **BalaSense** est un projet personnel de recherche et développement visant à créer une balaclava intelligente pour le monitoring en temps réel des données biométriques et physiologiques des pilotes de course automobile.
 
 ### Objectifs principaux
-- 🛡️ **Sécurité** : Détection précoce des signes de fatigue ou stress excessif
-- 📊 **Performance** : Analyse de l'état physiologique en corrélation avec la performance en piste
-- 🔬 **Innovation** : Application IoT dans le domaine du motorsport de haut niveau
+- **Sécurité** : Détection précoce des signes de fatigue ou stress excessif
+- **Performance** : Analyse de l'état physiologique en corrélation avec la performance en piste
+- **Innovation** : Application IoT dans le domaine du motorsport de haut niveau
 
 ---
 
-## 🎯 Fonctionnalités clés
+## Fonctionnalités clés
 
 ### Monitoring biométrique complet (7 capteurs)
 
@@ -46,7 +46,7 @@
 
 ---
 
-## 🔧 Architecture technique
+## Architecture technique
 
 ### Hardware
 - **Microcontrôleur** : ESP32 Dev Module (ESP32-PICO-D4)
@@ -70,7 +70,7 @@
 
 ---
 
-## 📁 Structure du projet
+## Structure du projet
 ```
 balasense/
 │
@@ -107,7 +107,7 @@ balasense/
 
 ---
 
-## 🚀 Démarrage rapide
+## Démarrage rapide
 
 ### Prérequis
 - PlatformIO IDE
@@ -116,7 +116,7 @@ balasense/
 ### Installation firmware
 ```bash
 # Clone du repository
-git clone https://github.com/[username]/balasense.git
+git clone https://github.com/Rhizlene/balasense.git
 cd balasense/firmware
 
 # Upload vers ESP32
@@ -126,7 +126,7 @@ pio device monitor
 
 ---
 
-## 📊 Données collectées en temps réel
+## Données collectées en temps réel
 
 | Donnée | Capteur | Fréquence | Unité | Objectif |
 |--------|---------|-----------|-------|----------|
@@ -141,26 +141,26 @@ pio device monitor
 
 ---
 
-## 🗓️ Roadmap
+## Roadmap
 
-### ✅ Phase 1 : Prototype (Q1 2026)
+### Phase 1 : Prototype (Q1 2026)
 - [x] Cahier des charges
 - [x] Commande matériel
-- [x] Tests MAX30102 (✅ 64 BPM validé)
-- [x] Tests MLX90614 (✅ 34°C validé)
+- [x] Tests MAX30102 (64 BPM validé)
+- [x] Tests MLX90614 (34°C validé)
 - [ ] Tests ICM-20948
 - [ ] Intégration multi-capteurs
 - [ ] Transmission Wi-Fi basique
 - [ ] Dashboard minimal
 
-### 🔄 Phase 2 : MVP (Q2 2026)
+### Phase 2 : MVP (Q2 2026)
 - [ ] Intégration physique balaclava
 - [ ] Backend complet avec BDD
 - [ ] Dashboard temps réel avancé
 - [ ] Tests terrain (simulateur/karting)
 - [ ] Documentation complète
 
-### 📅 Phase 3 : Optimisation (Q3 2026)
+### Phase 3 : Optimisation (Q3 2026)
 - [ ] Miniaturisation PCB custom
 - [ ] Algorithmes analyse avancée (ML)
 - [ ] Détection fatigue automatique
@@ -168,74 +168,47 @@ pio device monitor
 
 ---
 
-## 📈 Métriques de succès MVP
+## Métriques de succès MVP
 
 | Métrique | Objectif | Statut |
 |----------|----------|--------|
-| Nombre capteurs | 7 | ✅ Matériel reçu |
-| Autonomie batterie | ≥ 2h | 🎯 3h estimé |
-| Latence transmission | < 500ms | ⏳ À valider |
-| Précision BPM | ±5 BPM | ✅ Validé (64 BPM) |
-| Perte de données | < 1% | ⏳ À valider |
-| Poids total | < 150g | ⏳ À mesurer |
-| Confort pilote | ≥ 7/10 | ⏳ À tester |
+| Nombre capteurs | 7 | Validé |
+| Autonomie batterie | ≥ 2h | 3h estimé |
+| Latence transmission | < 500ms | À valider |
+| Précision BPM | ±5 BPM | Validé (64 BPM) |
+| Perte de données | < 1% | À valider |
+| Poids total | < 150g | À mesurer |
+| Confort pilote | ≥ 7/10 | À tester |
 
 ---
 
-## 🧪 Tests & Validation
+## Tests & Validation
 
 ### Capteurs validés
 
-- ✅ **MAX30102** : Rythme cardiaque (64 BPM mesuré au repos)
-- ✅ **MLX90614** : Température IR (34°C mesuré sur peau)
-- ⏳ **ICM-20948** : En cours de test
-- ⏳ **MH-Z19C** : Nécessite boost 5V (en attente breadboard)
-- ⏳ **GSR/EDA** : À tester
+- **MAX30102** : Rythme cardiaque (64 BPM mesuré au repos)
+- **MLX90614** : Température IR (34°C mesuré sur peau)
+- **ICM-20948** : En cours de test
+- **MH-Z19C** : Nécessite boost 5V (en attente breadboard)
+- **GSR/EDA** : À tester
 
 ---
 
-## 📖 Documentation
-
-- [Guide de démarrage](./docs/guide-demarrage-rapide.md)
-- [Architecture technique](./docs/architecture.md)
-
----
-
-## 📝 License
-
-Ce projet est sous licence MIT - voir le fichier [LICENSE](LICENSE) pour plus de détails.
-
----
-
-## 👤 Auteur
+## Auteur
 
 **Rhiz**  
-Passionnée de F1 et technologies motorsport
 
-🔗 GitHub : [github.com/[username]]  
-💼 Projet personnel - 2026
-
----
-
-## 🙏 Remerciements
-
-- Communauté ESP32 & Arduino
-- SparkFun & Adafruit - Bibliothèques capteurs
-- Communauté IoT & Makers
+GitHub : [github.com/Rhizlene]  
+Projet personnel - 2026
 
 ---
 
-## 🏁 Vision
+## Vision
 
 **BalaSense** a pour ambition de démocratiser le monitoring biométrique dans le sport automobile, en offrant aux pilotes amateurs et professionnels des données exploitables en temps réel pour optimiser performance et sécurité.
 
-**"Sense the race, feel the data"** 🏎️💓📊
+**"Sense the race, feel the data"**
 
----
-
-**⚠️ Avertissement** : Ce projet est un prototype de recherche et développement personnel. Il n'est pas certifié pour un usage professionnel en compétition réglementée (FIA). Toujours consulter un professionnel de santé pour l'interprétation de données biométriques.
-
----
 
 *Dernière mise à jour : Janvier 2026*  
 *Version : 0.1.0-alpha*  
