@@ -1,29 +1,12 @@
 /*
- * BalaSense - Smart Racing Biometric Monitor
- * Projet personnel - 2026
+ * Test MLX90614 - Capteur température infrarouge
+ * Projet BalaSense - Projet personnel
  * 
- * Balaclava connectée pour monitoring biométrique pilotes motorsport
+ * RÉSULTAT VALIDÉ : 34°C mesuré sur peau
  * 
- * Firmware principal ESP32
- * 
- * CAPTEURS VALIDÉS :
- * MAX30102 - Rythme cardiaque (BPM 64 mesuré)
- * MLX90614 - Température IR (34°C mesuré)
- * ICM-20948 - IMU 9 axes (en test)
- * MH-Z19C - CO₂ (nécessite boost 5V)
- * GSR/EDA - Stress
- * 
- * Hardware :
- * - ESP32 Dev Module
- * - Bus I2C : GPIO 25 (SDA), GPIO 26 (SCL)
- * - Alimentation : Li-Po 3.7V + Boost 5V
- * 
- * Pour tester un capteur :
- * 1. Copier le contenu de sensors/test_[capteur].cpp
- * 2. Coller dans main.cpp
- * 3. Upload : pio run --target upload
+ * Auteur : Rhizlene
+ * Date : Janvier 2026
  */
-
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_MLX90614.h>

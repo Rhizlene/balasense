@@ -11,7 +11,7 @@
 
 ## 📋 Description
 
-**BalaSense** est un projet de recherche et développement visant à créer une balaclava intelligente pour le monitoring en temps réel des données biométriques et physiologiques des pilotes de course automobile.
+**BalaSense** est un projet personnel de recherche et développement visant à créer une balaclava intelligente pour le monitoring en temps réel des données biométriques et physiologiques des pilotes de course automobile.
 
 ### Objectifs principaux
 - 🛡️ **Sécurité** : Détection précoce des signes de fatigue ou stress excessif
@@ -37,7 +37,7 @@
 ### Transmission temps réel
 - Wi-Fi / Bluetooth LE
 - API REST / MQTT
-- Dashboard web Angular
+- Dashboard web
 
 ### Autonomie optimisée
 - Batterie Li-Po 1000mAh
@@ -49,13 +49,14 @@
 ## 🔧 Architecture technique
 
 ### Hardware
-- **Microcontrôleur** : ESP32-S2-Saola-1
+- **Microcontrôleur** : ESP32 Dev Module (ESP32-PICO-D4)
 - **Alimentation** : 
   - Batterie Li-Po 3.7V (1000mAh)
   - Boost MT3608 (3.7V → 5V pour MH-Z19C)
   - Modules TP4056 Type-C (charge)
 - **Communication** :
-  - Bus I2C partagé (MAX30102, MLX90614, ICM-20948)
+  - Bus I2C partagé : GPIO 25 (SDA), GPIO 26 (SCL)
+  - MAX30102 (0x57), MLX90614 (0x5A), ICM-20948 (0x68)
   - UART (MH-Z19C)
   - Analogique (GSR/EDA)
 - **Support** : Balaclava textile avec intégration capteurs
@@ -64,20 +65,19 @@
 - **Firmware** : C/C++ (PlatformIO/Arduino)
 - **Backend** : Node.js + Express / Python Flask
 - **Base de données** : InfluxDB (time-series) ou PostgreSQL
-- **Frontend** : Angular + Chart.js / Plotly
+- **Frontend** : Dashboard web (Angular/React)
 - **Protocoles** : Wi-Fi (HTTP/MQTT) ou Bluetooth LE
 
 ---
 
 ## 📁 Structure du projet
-
 ```
 balasense/
 │
 ├── firmware/                 # Code embarqué ESP32
 │   ├── src/
 │   │   ├── main.cpp
-│   │   ├── sensors/         # Drivers capteurs
+│   │   ├── sensors/         # Tests capteurs
 │   │   ├── connectivity/    # Wi-Fi / BLE
 │   │   └── utils/           # Outils
 │   ├── platformio.ini
@@ -85,12 +85,10 @@ balasense/
 │
 ├── backend/                  # API & serveur
 │   ├── src/
-│   ├── package.json
 │   └── README.md
 │
-├── frontend/                 # Dashboard Angular
+├── frontend/                 # Dashboard
 │   ├── src/
-│   ├── angular.json
 │   └── README.md
 │
 ├── hardware/                 # Schémas électroniques
@@ -99,12 +97,8 @@ balasense/
 │   └── bom.csv
 │
 ├── docs/                     # Documentation
-│   ├── cahier-des-charges.md
-│   ├── architecture.md
-│   └── user-guide.md
 │
 ├── data-analysis/            # Scripts d'analyse
-│   └── notebooks/
 │
 ├── .gitignore
 ├── LICENSE
@@ -116,13 +110,10 @@ balasense/
 ## 🚀 Démarrage rapide
 
 ### Prérequis
-- PlatformIO IDE (ou Arduino IDE)
-- Node.js v18+ (pour backend)
-- Angular CLI v17+ (pour frontend)
-- Python 3.10+ (pour analyse données)
+- PlatformIO IDE
+- Git
 
 ### Installation firmware
-
 ```bash
 # Clone du repository
 git clone https://github.com/[username]/balasense.git
@@ -131,22 +122,6 @@ cd balasense/firmware
 # Upload vers ESP32
 pio run --target upload
 pio device monitor
-```
-
-### Lancement backend
-
-```bash
-cd backend
-npm install
-npm run dev
-```
-
-### Lancement dashboard
-
-```bash
-cd frontend
-npm install
-ng serve
 ```
 
 ---
@@ -171,7 +146,9 @@ ng serve
 ### ✅ Phase 1 : Prototype (Q1 2026)
 - [x] Cahier des charges
 - [x] Commande matériel
-- [ ] Tests capteurs individuels
+- [x] Tests MAX30102 (✅ 64 BPM validé)
+- [x] Tests MLX90614 (✅ 34°C validé)
+- [ ] Tests ICM-20948
 - [ ] Intégration multi-capteurs
 - [ ] Transmission Wi-Fi basique
 - [ ] Dashboard minimal
@@ -188,7 +165,6 @@ ng serve
 - [ ] Algorithmes analyse avancée (ML)
 - [ ] Détection fatigue automatique
 - [ ] Mode dégradé & failsafe
-- [ ] Tests FIA (optionnel)
 
 ---
 
@@ -196,10 +172,10 @@ ng serve
 
 | Métrique | Objectif | Statut |
 |----------|----------|--------|
-| Nombre capteurs | 7 | ✅ Validé |
+| Nombre capteurs | 7 | ✅ Matériel reçu |
 | Autonomie batterie | ≥ 2h | 🎯 3h estimé |
 | Latence transmission | < 500ms | ⏳ À valider |
-| Précision BPM | ±5 BPM | ⏳ À valider |
+| Précision BPM | ±5 BPM | ✅ Validé (64 BPM) |
 | Perte de données | < 1% | ⏳ À valider |
 | Poids total | < 150g | ⏳ À mesurer |
 | Confort pilote | ≥ 7/10 | ⏳ À tester |
@@ -208,48 +184,20 @@ ng serve
 
 ## 🧪 Tests & Validation
 
-### Tests unitaires
-```bash
-# Firmware
-cd firmware
-pio test
+### Capteurs validés
 
-# Backend
-cd backend
-npm test
-
-# Frontend
-cd frontend
-ng test
-```
-
-### Tests d'intégration
-- Validation acquisition multi-capteurs
-- Stress test transmission Wi-Fi
-- Test autonomie batterie
-- Tests en conditions réelles (chaleur, mouvement)
+- ✅ **MAX30102** : Rythme cardiaque (64 BPM mesuré au repos)
+- ✅ **MLX90614** : Température IR (34°C mesuré sur peau)
+- ⏳ **ICM-20948** : En cours de test
+- ⏳ **MH-Z19C** : Nécessite boost 5V (en attente breadboard)
+- ⏳ **GSR/EDA** : À tester
 
 ---
 
 ## 📖 Documentation
 
-- [Cahier des charges](./docs/cahier-des-charges.md)
+- [Guide de démarrage](./docs/guide-demarrage-rapide.md)
 - [Architecture technique](./docs/architecture.md)
-- [API Documentation](./docs/api-documentation.md)
-- [Guide utilisateur](./docs/user-guide.md)
-- [Guide de démarrage rapide](./docs/guide-demarrage-rapide.md)
-
----
-
-## 🤝 Contribution
-
-Les contributions sont les bienvenues ! 
-
-1. Forker le projet
-2. Créer une branche feature (`git checkout -b feature/AmazingFeature`)
-3. Commiter les changements (`git commit -m 'Add AmazingFeature'`)
-4. Pusher vers la branche (`git push origin feature/AmazingFeature`)
-5. Ouvrir une Pull Request
 
 ---
 
@@ -261,44 +209,31 @@ Ce projet est sous licence MIT - voir le fichier [LICENSE](LICENSE) pour plus de
 
 ## 👤 Auteur
 
-**Rhiz**
-- Software & Data Engineer Apprentice @ ArcelorMittal
-- MSc IoT & Engineering @ EPITECH Marseille
-- Passionnée de F1 et technologies motorsport
+**Rhiz**  
+Passionnée de F1 et technologies motorsport
 
-📧 Contact : [contact]  
-🔗 LinkedIn : [profil]  
-💼 Portfolio : [site]
+🔗 GitHub : [github.com/[username]]  
+💼 Projet personnel - 2026
 
 ---
 
 ## 🙏 Remerciements
 
-- EPITECH Marseille - Encadrement pédagogique
-- ArcelorMittal France - Support technique
 - Communauté ESP32 & Arduino
 - SparkFun & Adafruit - Bibliothèques capteurs
-- Écuries et pilotes testeurs
-
----
-
-## 📈 Statistiques du projet
-
-![GitHub last commit](https://img.shields.io/github/last-commit/[username]/balasense)
-![GitHub issues](https://img.shields.io/github/issues/[username]/balasense)
-![GitHub stars](https://img.shields.io/github/stars/[username]/balasense?style=social)
+- Communauté IoT & Makers
 
 ---
 
 ## 🏁 Vision
 
-**BalaSense** a pour ambition de devenir la référence en monitoring biométrique pour le sport automobile, en offrant aux pilotes et équipes techniques des données exploitables en temps réel pour optimiser performance et sécurité.
+**BalaSense** a pour ambition de démocratiser le monitoring biométrique dans le sport automobile, en offrant aux pilotes amateurs et professionnels des données exploitables en temps réel pour optimiser performance et sécurité.
 
 **"Sense the race, feel the data"** 🏎️💓📊
 
 ---
 
-**⚠️ Avertissement** : Ce projet est un prototype de recherche et développement. Il n'est pas certifié pour un usage professionnel en compétition réglementée (FIA). Toujours consulter un professionnel de santé pour l'interprétation de données biométriques.
+**⚠️ Avertissement** : Ce projet est un prototype de recherche et développement personnel. Il n'est pas certifié pour un usage professionnel en compétition réglementée (FIA). Toujours consulter un professionnel de santé pour l'interprétation de données biométriques.
 
 ---
 
