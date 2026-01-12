@@ -4,8 +4,7 @@
 
 [![Status](https://img.shields.io/badge/status-in%20development-yellow)]()
 [![Hardware](https://img.shields.io/badge/hardware-ESP32-blue)]()
-[![Sensors](https://img.shields.io/badge/sensors-7%20capteurs-green)]()
-[![License](https://img.shields.io/badge/license-MIT-green)]()
+[![Sensors](https://img.shields.io/badge/sensors-3/7%20validated-green)]()
 
 ---
 
@@ -24,15 +23,15 @@
 
 ### Monitoring biométrique complet (7 capteurs)
 
-| Capteur | Mesure | Utilité |
-|---------|--------|---------|
-| MAX30102 | Rythme cardiaque (BPM) + HRV + SpO2 | Stress, fatigue, oxygénation |
-| MLX90614 | Température frontale (IR) | Fièvre, surchauffe corporelle |
-| ICM-20948 | Mouvements 9 axes (G-force) | Impacts, analyse pilotage |
-| MH-Z19C | CO₂ respiratoire | Fatigue mentale, respiration |
-| GSR/EDA | Conductance peau | Stress physiologique |
-| Textile conducteur | Hydratation/transpiration | Déshydratation |
-| SpO2 | Saturation oxygène | Performance cardio |
+| Capteur | Mesure | Utilité | Statut |
+|---------|--------|---------|--------|
+| MAX30102 | Rythme cardiaque (BPM) + HRV + SpO2 | Stress, fatigue, oxygénation | Validé |
+| MLX90614 | Température frontale (IR) | Fièvre, surchauffe corporelle | Validé |
+| ICM-20948 | Mouvements 9 axes (G-force) | Impacts, analyse pilotage | Validé |
+| MH-Z19C | CO₂ respiratoire | Fatigue mentale, respiration | En attente |
+| GSR/EDA | Conductance peau | Stress physiologique | En attente |
+| Textile conducteur | Hydratation/transpiration | Déshydratation | En attente |
+| SpO2 | Saturation oxygène | Performance cardio | Intégré MAX30102 |
 
 ### Transmission temps réel
 - Wi-Fi / Bluetooth LE
@@ -77,7 +76,7 @@ balasense/
 ├── firmware/                 # Code embarqué ESP32
 │   ├── src/
 │   │   ├── main.cpp
-│   │   ├── sensors/         # Tests capteurs
+│   │   ├── sensors/         # Tests capteurs (.backup)
 │   │   ├── connectivity/    # Wi-Fi / BLE
 │   │   └── utils/           # Outils
 │   ├── platformio.ini
@@ -136,6 +135,7 @@ pio device monitor
 | Température | MLX90614 | 1 Hz | °C | Surchauffe |
 | Accélération | ICM-20948 | 50-100 Hz | g | G-force / Impacts |
 | Vitesse angulaire | ICM-20948 | 50-100 Hz | °/s | Mouvements tête |
+| Orientation | ICM-20948 | 10 Hz | µT | Magnétomètre |
 | CO₂ | MH-Z19C | 0.2 Hz | ppm | Respiration |
 | GSR | EDA | 10 Hz | µS | Stress |
 
@@ -148,7 +148,8 @@ pio device monitor
 - [x] Commande matériel
 - [x] Tests MAX30102 (64 BPM validé)
 - [x] Tests MLX90614 (34°C validé)
-- [ ] Tests ICM-20948
+- [x] Tests ICM-20948 (1.00g validé, soudure réussie)
+- [ ] Tests capteurs restants (MH-Z19C, GSR/EDA)
 - [ ] Intégration multi-capteurs
 - [ ] Transmission Wi-Fi basique
 - [ ] Dashboard minimal
@@ -172,10 +173,12 @@ pio device monitor
 
 | Métrique | Objectif | Statut |
 |----------|----------|--------|
-| Nombre capteurs | 7 | Validé |
+| Capteurs validés | 7 | 3/7 (43%) |
 | Autonomie batterie | ≥ 2h | 3h estimé |
 | Latence transmission | < 500ms | À valider |
 | Précision BPM | ±5 BPM | Validé (64 BPM) |
+| Précision température | ±0.5°C | Validé (34°C) |
+| Précision G-force | ±0.1g | Validé (1.00g) |
 | Perte de données | < 1% | À valider |
 | Poids total | < 150g | À mesurer |
 | Confort pilote | ≥ 7/10 | À tester |
@@ -184,19 +187,66 @@ pio device monitor
 
 ## Tests & Validation
 
-### Capteurs validés
+### Capteurs validés (3/7)
 
-- **MAX30102** : Rythme cardiaque (64 BPM mesuré au repos)
-- **MLX90614** : Température IR (34°C mesuré sur peau)
-- **ICM-20948** : En cours de test
-- **MH-Z19C** : Nécessite boost 5V (en attente breadboard)
-- **GSR/EDA** : À tester
+**MAX30102 - Capteur cardiaque**
+- Rythme cardiaque : 64 BPM mesuré au repos
+- Signal IR : Excellent (170000)
+- Adresse I2C : 0x57
+- Statut : Validé
+
+**MLX90614 - Température infrarouge**
+- Température objet : 34°C mesuré sur peau
+- Température ambiante : 30°C
+- Adresse I2C : 0x5A
+- Statut : Validé
+
+**ICM-20948 - IMU 9 axes**
+- Accéléromètre : 1.00g au repos (gravité terrestre)
+- Gyroscope : Rotation détectée (0-250°/s)
+- Magnétomètre : Champ magnétique détecté (-65 µT)
+- Température : 33°C
+- Adresse I2C : 0x68
+- Pins soudés manuellement
+- Statut : Validé
+
+### Capteurs en attente (4/7)
+
+**MH-Z19C - CO₂**
+- Nécessite boost 5V (en attente breadboard)
+- Interface UART
+
+**GSR/EDA - Stress**
+- Interface analogique
+- À tester
+
+**Textile conducteur - Hydratation**
+- Interface analogique
+- À tester
+
+**Capteur supplémentaire**
+- À définir
+
+---
+
+## Apprentissages techniques
+
+### Soudure électronique
+- Première soudure de header pins sur ICM-20948
+- Technique maîtrisée : fil à souder avec flux intégré
+- Température optimale : 350-370°C
+- Résultat : Connexions stables, capteur opérationnel
+
+### Bus I2C
+- Configuration custom : GPIO 25 (SDA), GPIO 26 (SCL)
+- 3 capteurs cohabitant sur le même bus (adresses différentes)
+- Gestion des problèmes de contact mécanique
 
 ---
 
 ## Auteur
 
-**Rhiz**  
+**Rhizlene**  
 
 GitHub : [github.com/Rhizlene]  
 Projet personnel - 2026
@@ -212,4 +262,4 @@ Projet personnel - 2026
 
 *Dernière mise à jour : Janvier 2026*  
 *Version : 0.1.0-alpha*  
-*Statut : En développement actif*
+*Statut : En développement actif - 3/7 capteurs validés*

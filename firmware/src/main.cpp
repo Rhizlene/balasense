@@ -1,76 +1,145 @@
 /*
- * BalaSense - Smart Racing Biometric Monitor
- * Projet personnel - 2026
+ * Test ICM-20948 - Capteur IMU 9 axes
+ * Projet BalaSense - Projet personnel
  * 
- * Balaclava connectée pour monitoring biométrique pilotes motorsport
+ * Mesure accélération, rotation et orientation
+ * Pins I2C : GPIO 25 (SDA) et GPIO 26 (SCL)
  * 
- * Firmware principal ESP32
- * 
- * CAPTEURS VALIDÉS :
- * MAX30102 - Rythme cardiaque (BPM 64 mesuré)
- * MLX90614 - Température IR (34°C mesuré)
- * ICM-20948 - IMU 9 axes (en test)
- * MH-Z19C - CO₂ (nécessite boost 5V)
- * GSR/EDA - Stress
- * 
- * Hardware :
- * - ESP32 Dev Module
- * - Bus I2C : GPIO 25 (SDA), GPIO 26 (SCL)
- * - Alimentation : Li-Po 3.7V + Boost 5V
- * 
- * Pour tester un capteur :
- * 1. Copier le contenu de sensors/test_[capteur].cpp
- * 2. Coller dans main.cpp
- * 3. Upload : pio run --target upload
+ * Auteur : Rhiz
+ * Date : Janvier 2026
  */
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <Adafruit_MLX90614.h>
+#include "ICM_20948.h"
 
 #define I2C_SDA 25
 #define I2C_SCL 26
 
-Adafruit_MLX90614 mlx = Adafruit_MLX90614();
+ICM_20948_I2C imu;
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   
-  Serial.println("\n=== BalaSense - MLX90614 Active ===\n");
+  Serial.println("\n=== Test ICM-20948 - IMU 9 axes ===");
+  Serial.println("=== Projet BalaSense ===\n");
   
   Wire.begin(I2C_SDA, I2C_SCL);
   
-  if (!mlx.begin()) {
-    Serial.println("MLX90614 initialization failed");
+  Serial.print("Initialisation ICM-20948...");
+  
+  bool initialized = false;
+  
+  // Tentative avec adresse 0x68
+  imu.begin(Wire, 0);
+  
+  if (imu.status != ICM_20948_Stat_Ok) {
+    Serial.println(" ÉCHEC !");
+    Serial.println("\nVérifiez le câblage :");
+    Serial.println("- VIN → 3.3V");
+    Serial.println("- GND → GND");
+    Serial.println("- SDA → GPIO 25");
+    Serial.println("- SCL → GPIO 26");
+    Serial.println("\nAssurez-vous que les pins sont bien enfoncés !");
     while (1);
   }
   
-  Serial.println("MLX90614 ready\n");
+  Serial.println(" OK !\n");
+  
+  Serial.println("=== Configuration ===");
+  Serial.println("Accéléromètre : ±16g");
+  Serial.println("Gyroscope : ±2000 dps");
+  Serial.println("Magnétomètre : activé\n");
+  
   delay(2000);
 }
 
 void loop() {
-  float ambient = mlx.readAmbientTempC();
-  float object = mlx.readObjectTempC();
-  
-  Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  Serial.print("Ambient: ");
-  Serial.print(ambient, 1);
-  Serial.println(" °C");
-  
-  Serial.print("Object : ");
-  Serial.print(object, 1);
-  Serial.print(" °C");
-  
-  if (object > 34.0 && object < 38.0) {
-    Serial.print(" | NORMAL");
-  } else if (object >= 38.0) {
-    Serial.print(" | FEVER");
+  // Lecture des données
+  if (imu.dataReady()) {
+    imu.getAGMT();  // Accéléromètre + Gyro + Magnétomètre + Température
+    
+    Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    
+    // ACCÉLÉROMÈTRE (G-force)
+    Serial.println("ACCÉLÉROMÈTRE (G-force) :");
+    Serial.print("  X: ");
+    Serial.print(imu.accX() / 1000.0, 2);
+    Serial.print(" g  |  Y: ");
+    Serial.print(imu.accY() / 1000.0, 2);
+    Serial.print(" g  |  Z: ");
+    Serial.print(imu.accZ() / 1000.0, 2);
+    Serial.println(" g");
+    
+    // Magnitude totale (force G totale)
+    float totalG = sqrt(
+      pow(imu.accX() / 1000.0, 2) +
+      pow(imu.accY() / 1000.0, 2) +
+      pow(imu.accZ() / 1000.0, 2)
+    );
+    Serial.print("  Total G-force: ");
+    Serial.print(totalG, 2);
+    Serial.println(" g");
+    
+    // GYROSCOPE (rotation)
+    Serial.println("\nGYROSCOPE (rotation) :");
+    Serial.print("  X: ");
+    Serial.print(imu.gyrX(), 1);
+    Serial.print(" °/s  |  Y: ");
+    Serial.print(imu.gyrY(), 1);
+    Serial.print(" °/s  |  Z: ");
+    Serial.print(imu.gyrZ(), 1);
+    Serial.println(" °/s");
+    
+    // MAGNÉTOMÈTRE (orientation)
+    Serial.println("\nMAGNÉTOMÈTRE (champ magnétique) :");
+    Serial.print("  X: ");
+    Serial.print(imu.magX(), 1);
+    Serial.print(" µT  |  Y: ");
+    Serial.print(imu.magY(), 1);
+    Serial.print(" µT  |  Z: ");
+    Serial.print(imu.magZ(), 1);
+    Serial.println(" µT");
+    
+    // TEMPÉRATURE
+    Serial.println("\nTEMPÉRATURE :");
+    Serial.print("  ");
+    Serial.print(imu.temp(), 1);
+    Serial.println(" °C");
+    
+    // ANALYSE MOUVEMENT
+    Serial.println("\nANALYSE :");
+    
+    // Détection mouvement brusque
+    if (totalG > 1.5) {
+      Serial.println("  MOUVEMENT BRUSQUE détecté !");
+    } else if (totalG < 0.5) {
+      Serial.println("  Chute libre / Capteur non stable");
+    } else {
+      Serial.println("  Capteur stable (gravité terrestre ~1g)");
+    }
+    
+    // Détection rotation
+    float totalRotation = sqrt(
+      pow(imu.gyrX(), 2) +
+      pow(imu.gyrY(), 2) +
+      pow(imu.gyrZ(), 2)
+    );
+    
+    if (totalRotation > 50) {
+      Serial.println("  ROTATION RAPIDE détectée !");
+    } else if (totalRotation > 10) {
+      Serial.println("  Rotation modérée");
+    } else {
+      Serial.println("  Pas de rotation significative");
+    }
+    
+    Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    
+  } else {
+    Serial.println("En attente de données...");
   }
   
-  Serial.println();
-  Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-  
-  delay(2000);
+  delay(500);  // Mesure toutes les 500ms (2Hz)
 }
