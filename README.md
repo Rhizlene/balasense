@@ -1,265 +1,231 @@
 # BalaSense - Smart Racing Biometric Monitor
 
-> Système de monitoring biométrique embarqué pour pilotes de sport automobile
+> Embedded biometric monitoring system for motorsport drivers
 
 [![Status](https://img.shields.io/badge/status-in%20development-yellow)]()
 [![Hardware](https://img.shields.io/badge/hardware-ESP32-blue)]()
-[![Sensors](https://img.shields.io/badge/sensors-3/7%20validated-green)]()
+[![Sensors](https://img.shields.io/badge/sensors-2%2F6%20validated-orange)]()
 
 ---
 
 ## Description
 
-**BalaSense** est un projet personnel de recherche et développement visant à créer une balaclava intelligente pour le monitoring en temps réel des données biométriques et physiologiques des pilotes de course automobile.
+**BalaSense** is a personal R&D project aimed at building a smart balaclava for real-time biometric and physiological monitoring of racing drivers.
 
-### Objectifs principaux
-- **Sécurité** : Détection précoce des signes de fatigue ou stress excessif
-- **Performance** : Analyse de l'état physiologique en corrélation avec la performance en piste
-- **Innovation** : Application IoT dans le domaine du motorsport de haut niveau
-
----
-
-## Fonctionnalités clés
-
-### Monitoring biométrique complet (7 capteurs)
-
-| Capteur | Mesure | Utilité | Statut |
-|---------|--------|---------|--------|
-| MAX30102 | Rythme cardiaque (BPM) + HRV + SpO2 | Stress, fatigue, oxygénation | Validé |
-| MLX90614 | Température frontale (IR) | Fièvre, surchauffe corporelle | Validé |
-| ICM-20948 | Mouvements 9 axes (G-force) | Impacts, analyse pilotage | Validé |
-| MH-Z19C | CO₂ respiratoire | Fatigue mentale, respiration | En attente |
-| GSR/EDA | Conductance peau | Stress physiologique | En attente |
-| Textile conducteur | Hydratation/transpiration | Déshydratation | En attente |
-| SpO2 | Saturation oxygène | Performance cardio | Intégré MAX30102 |
-
-### Transmission temps réel
-- Wi-Fi / Bluetooth LE
-- API REST / MQTT
-- Dashboard web
-
-### Autonomie optimisée
-- Batterie Li-Po 1000mAh
-- Boost converter intelligent (3.7V → 5V)
-- Autonomie cible : 3h minimum
+### Main goals
+- **Safety**: Early detection of fatigue and excessive stress
+- **Performance**: Physiological state analysis correlated with on-track performance
+- **Innovation**: IoT application in high-level motorsport
 
 ---
 
-## Architecture technique
+## Physical Architecture
+
+The system is split into two wearable components:
+
+```
+┌─────────────────────────────────────┐
+│             BALACLAVA               │
+│  • ECG electrodes (MAX30003)        │
+│  • EDA / GSR electrodes             │
+│  • TMP117 (skin temperature)        │
+│  • 3mm silicone tube (breathing)    │
+└────────────────┬────────────────────┘
+                 │ wiring
+┌────────────────▼────────────────────┐
+│            HANS BOX                 │
+│  • ESP32 Dev Module                 │
+│  • MAX30003 (ECG, SPI)              │
+│  • SCD41  (CO₂ + temp + hum, I²C)  │
+│  • SDP810 (respiratory flow, I²C)  │
+│  • ICM-20948 (9-axis IMU, I²C)     │
+│  • Li-Po 1200mAh battery (503759)   │
+│  • TP4056 Type-C + BMS              │
+│  • 5×7 cm perfboard                 │
+└─────────────────────────────────────┘
+```
+
+**Breathing path:** 3mm silicone tube → Y-connector → SDP810 (flow) + SCD41 (CO₂)
+
+---
+
+## Sensors
+
+### Validated ✅
+
+| Sensor | Measurement | Bus | Address | Validated result |
+|--------|------------|-----|---------|-----------------|
+| **ICM-20948** | 9-axis IMU (accel / gyro / mag) | I²C | 0x68 | ~1.00 g at rest, rotation detected |
+| **SCD41** | CO₂ + temperature + humidity | I²C | 0x62 | 485 ppm outdoors confirmed |
+
+> **ICM-20948**: currently wired on GPIO25/26 — to be migrated to GPIO21/22 (shared bus) before final assembly.
+
+### Received — pending test ⏳
+
+| Sensor | Measurement | Bus | Notes |
+|--------|------------|-----|-------|
+| **MAX30003** | ECG (cardiac signal) | SPI | — |
+| **GSR / EDA** | Skin conductance (stress) | Analog | — |
+| **SDP810** | Respiratory flow | I²C | — |
+| **TMP117** | Skin temperature | I²C | 0x48 |
+
+---
+
+## Technical Architecture
 
 ### Hardware
-- **Microcontrôleur** : ESP32 Dev Module (ESP32-PICO-D4)
-- **Alimentation** : 
-  - Batterie Li-Po 3.7V (1000mAh)
-  - Boost MT3608 (3.7V → 5V pour MH-Z19C)
-  - Modules TP4056 Type-C (charge)
-- **Communication** :
-  - Bus I2C partagé : GPIO 25 (SDA), GPIO 26 (SCL)
-  - MAX30102 (0x57), MLX90614 (0x5A), ICM-20948 (0x68)
-  - UART (MH-Z19C)
-  - Analogique (GSR/EDA)
-- **Support** : Balaclava textile avec intégration capteurs
+
+- **Microcontroller**: ESP32 Dev Module
+- **Power**: Li-Po 3.7V 1200mAh (503759) + TP4056 Type-C + BMS
+- **I²C bus**: GPIO21 (SDA) / GPIO22 (SCL) — shared bus for all I²C sensors
+- **SPI**: MAX30003 (ECG)
+- **Analog**: GSR/EDA
+- **Mechanical support**: 5×7 cm perfboard (HANS box)
+
+### I²C bus — addresses
+
+| Address | Sensor |
+|---------|--------|
+| 0x62 | SCD41 |
+| 0x68 | ICM-20948 |
+| 0x48 | TMP117 |
+| — | SDP810 (address TBC) |
 
 ### Software Stack
-- **Firmware** : C/C++ (PlatformIO/Arduino)
-- **Backend** : Node.js + Express / Python Flask
-- **Base de données** : InfluxDB (time-series) ou PostgreSQL
-- **Frontend** : Dashboard web (Angular/React)
-- **Protocoles** : Wi-Fi (HTTP/MQTT) ou Bluetooth LE
+
+- **Firmware**: C/C++ (PlatformIO / Arduino framework)
+- **Backend**: Node.js + Express / Python Flask (TBD)
+- **Database**: InfluxDB time-series (TBD)
+- **Frontend**: Web dashboard (TBD)
+- **Protocols**: Wi-Fi (HTTP/MQTT) or Bluetooth LE
 
 ---
 
-## Structure du projet
+## Project Structure
+
 ```
 balasense/
 │
-├── firmware/                 # Code embarqué ESP32
+├── firmware/                 # ESP32 embedded code
 │   ├── src/
 │   │   ├── main.cpp
-│   │   ├── sensors/         # Tests capteurs (.backup)
-│   │   ├── connectivity/    # Wi-Fi / BLE
-│   │   └── utils/           # Outils
-│   ├── platformio.ini
-│   └── README.md
+│   │   ├── sensors/         # Per-sensor test files
+│   │   └── utils/
+│   └── platformio.ini
 │
-├── backend/                  # API & serveur
-│   ├── src/
-│   └── README.md
+├── doc/                      # Architecture documentation
+│   ├── balasense-architecture_securite_pilote.odt
+│   └── BALASENSE_architecture_capteurs.docx
 │
-├── frontend/                 # Dashboard
-│   ├── src/
-│   └── README.md
-│
-├── hardware/                 # Schémas électroniques
-│   ├── schematics/
-│   ├── pcb/
-│   └── bom.csv
-│
-├── docs/                     # Documentation
-│
-├── data-analysis/            # Scripts d'analyse
+├── hardware/                 # Schematics
 │
 ├── .gitignore
-├── LICENSE
 └── README.md
 ```
 
 ---
 
-## Démarrage rapide
+## Quick Start
 
-### Prérequis
-- PlatformIO IDE
+### Prerequisites
+- PlatformIO IDE (VS Code)
 - Git
 
-### Installation firmware
+### Flash firmware
 ```bash
-# Clone du repository
 git clone https://github.com/Rhizlene/balasense.git
 cd balasense/firmware
-
-# Upload vers ESP32
 pio run --target upload
 pio device monitor
 ```
 
 ---
 
-## Données collectées en temps réel
+## Collected Data
 
-| Donnée | Capteur | Fréquence | Unité | Objectif |
-|--------|---------|-----------|-------|----------|
-| Rythme cardiaque | MAX30102 | 25-100 Hz | BPM | Stress / Effort |
-| HRV | MAX30102 | 1 Hz | ms | Récupération / Fatigue |
-| SpO2 | MAX30102 | 1 Hz | % | Oxygénation |
-| Température | MLX90614 | 1 Hz | °C | Surchauffe |
-| Accélération | ICM-20948 | 50-100 Hz | g | G-force / Impacts |
-| Vitesse angulaire | ICM-20948 | 50-100 Hz | °/s | Mouvements tête |
-| Orientation | ICM-20948 | 10 Hz | µT | Magnétomètre |
-| CO₂ | MH-Z19C | 0.2 Hz | ppm | Respiration |
-| GSR | EDA | 10 Hz | µS | Stress |
+| Data | Sensor | Bus | Rate | Unit |
+|------|--------|-----|------|------|
+| G-force / Acceleration | ICM-20948 | I²C | 50–100 Hz | g |
+| Angular velocity | ICM-20948 | I²C | 50–100 Hz | °/s |
+| Magnetic field | ICM-20948 | I²C | 10 Hz | µT |
+| CO₂ | SCD41 | I²C | 0.2 Hz | ppm |
+| Temperature + humidity | SCD41 | I²C | 0.2 Hz | °C / % |
+| ECG | MAX30003 | SPI | — | mV |
+| Skin conductance | GSR/EDA | Analog | 10 Hz | µS |
+| Respiratory flow | SDP810 | I²C | — | L/min |
+| Skin temperature | TMP117 | I²C | 1 Hz | °C |
 
 ---
 
 ## Roadmap
 
-### Phase 1 : Prototype (Q1 2026)
-- [x] Cahier des charges
-- [x] Commande matériel
-- [x] Tests MAX30102 (64 BPM validé)
-- [x] Tests MLX90614 (34°C validé)
-- [x] Tests ICM-20948 (1.00g validé, soudure réussie)
-- [ ] Tests capteurs restants (MH-Z19C, GSR/EDA)
-- [ ] Intégration multi-capteurs
-- [ ] Transmission Wi-Fi basique
-- [ ] Dashboard minimal
+### Phase 1 — Sensor Validation (Q1–Q2 2026)
+- [x] Full hardware architecture defined
+- [x] Components ordered and received
+- [x] ICM-20948 validated (1.00 g, rotation detected)
+- [x] SCD41 validated (485 ppm outdoors)
+- [ ] Migrate ICM-20948 to GPIO21/22
+- [ ] Validate MAX30003 (ECG)
+- [ ] Validate GSR/EDA
+- [ ] Validate SDP810 (respiratory flow)
+- [ ] Validate TMP117 (skin temperature)
 
-### Phase 2 : MVP (Q2 2026)
-- [ ] Intégration physique balaclava
-- [ ] Backend complet avec BDD
-- [ ] Dashboard temps réel avancé
-- [ ] Tests terrain (simulateur/karting)
-- [ ] Documentation complète
+### Phase 2 — Integration (Q2–Q3 2026)
+- [ ] Merged multi-sensor firmware
+- [ ] Soldering on 5×7 cm perfboard
+- [ ] Physical integration: balaclava + HANS box
+- [ ] Basic Wi-Fi / BLE transmission
+- [ ] Minimal dashboard
 
-### Phase 3 : Optimisation (Q3 2026)
-- [ ] Miniaturisation PCB custom
-- [ ] Algorithmes analyse avancée (ML)
-- [ ] Détection fatigue automatique
-- [ ] Mode dégradé & failsafe
+### Phase 3 — Field MVP (Q3–Q4 2026)
+- [ ] Field tests (simulator / karting)
+- [ ] Backend + real-time database
+- [ ] Analysis algorithms (fatigue, stress)
+- [ ] Full documentation
 
----
-
-## Métriques de succès MVP
-
-| Métrique | Objectif | Statut |
-|----------|----------|--------|
-| Capteurs validés | 7 | 3/7 (43%) |
-| Autonomie batterie | ≥ 2h | 3h estimé |
-| Latence transmission | < 500ms | À valider |
-| Précision BPM | ±5 BPM | Validé (64 BPM) |
-| Précision température | ±0.5°C | Validé (34°C) |
-| Précision G-force | ±0.1g | Validé (1.00g) |
-| Perte de données | < 1% | À valider |
-| Poids total | < 150g | À mesurer |
-| Confort pilote | ≥ 7/10 | À tester |
+### Phase 4 — Optimization (2027)
+- [ ] Custom miniaturized PCB
+- [ ] ML algorithms (automatic fatigue detection)
+- [ ] Degraded mode & failsafe
 
 ---
 
-## Tests & Validation
+## MVP Success Metrics
 
-### Capteurs validés (3/7)
-
-**MAX30102 - Capteur cardiaque**
-- Rythme cardiaque : 64 BPM mesuré au repos
-- Signal IR : Excellent (170000)
-- Adresse I2C : 0x57
-- Statut : Validé
-
-**MLX90614 - Température infrarouge**
-- Température objet : 34°C mesuré sur peau
-- Température ambiante : 30°C
-- Adresse I2C : 0x5A
-- Statut : Validé
-
-**ICM-20948 - IMU 9 axes**
-- Accéléromètre : 1.00g au repos (gravité terrestre)
-- Gyroscope : Rotation détectée (0-250°/s)
-- Magnétomètre : Champ magnétique détecté (-65 µT)
-- Température : 33°C
-- Adresse I2C : 0x68
-- Pins soudés manuellement
-- Statut : Validé
-
-### Capteurs en attente (4/7)
-
-**MH-Z19C - CO₂**
-- Nécessite boost 5V (en attente breadboard)
-- Interface UART
-
-**GSR/EDA - Stress**
-- Interface analogique
-- À tester
-
-**Textile conducteur - Hydratation**
-- Interface analogique
-- À tester
-
-**Capteur supplémentaire**
-- À définir
+| Metric | Target | Status |
+|--------|--------|--------|
+| Sensors validated | 6/6 | 2/6 (33%) |
+| Battery life | ≥ 2h | To measure |
+| Transmission latency | < 500ms | To validate |
+| CO₂ accuracy | ±50 ppm | Validated (485 ppm outdoors) |
+| G-force accuracy | ±0.1 g | Validated (1.00 g) |
+| Total weight | < 150g | To measure |
+| Driver comfort | ≥ 7/10 | To test |
 
 ---
 
-## Apprentissages techniques
+## PlatformIO Libraries
 
-### Soudure électronique
-- Première soudure de header pins sur ICM-20948
-- Technique maîtrisée : fil à souder avec flux intégré
-- Température optimale : 350-370°C
-- Résultat : Connexions stables, capteur opérationnel
-
-### Bus I2C
-- Configuration custom : GPIO 25 (SDA), GPIO 26 (SCL)
-- 3 capteurs cohabitant sur le même bus (adresses différentes)
-- Gestion des problèmes de contact mécanique
+| Sensor | Library |
+|--------|---------|
+| ICM-20948 | `sparkfun/SparkFun 9DoF IMU Breakout - ICM 20948 @ 1.3.2` |
+| SCD41 | `sensirion/Sensirion I2C SCD4x @ 0.4.0` + `Sensirion Core @ 0.7.3` |
+| MAX30003 | TBD |
+| SDP810 | TBD |
+| TMP117 | TBD |
 
 ---
 
-## Auteur
+## Author
 
 **Rhizlene**  
-
-GitHub : [github.com/Rhizlene]  
-Projet personnel - 2026
+GitHub: [github.com/Rhizlene]  
+Personal project — 2026
 
 ---
-
-## Vision
-
-**BalaSense** a pour ambition de démocratiser le monitoring biométrique dans le sport automobile, en offrant aux pilotes amateurs et professionnels des données exploitables en temps réel pour optimiser performance et sécurité.
 
 **"Sense the race, feel the data"**
 
-
-*Dernière mise à jour : Janvier 2026*  
-*Version : 0.1.0-alpha*  
-*Statut : En développement actif - 3/7 capteurs validés*
+*Last updated: April 2026*  
+*Version: 0.2.0-alpha*  
+*Status: Active development — 2/6 sensors validated*
