@@ -27,19 +27,19 @@ The system is split into two wearable components:
 ┌─────────────────────────────────────┐
 │             BALACLAVA               │
 │  • ECG electrodes (MAX30003)        │
-│  • EDA / GSR electrodes             │
+│  • EDA / GSR electrodes (CJMCU-6701)│
 │  • TMP117 (skin temperature)        │
 │  • 3mm silicone tube (breathing)    │
 └────────────────┬────────────────────┘
-                 │ wiring
+                 │ silicone wires 28-30 AWG + strain relief
 ┌────────────────▼────────────────────┐
 │            HANS BOX                 │
 │  • ESP32 Dev Module                 │
-│  • MAX30003 (ECG, SPI)              │
+│  • MAX30003 / CJMCU-30003 (ECG, SPI)│
 │  • SCD41  (CO₂ + temp + hum, I²C)  │
-│  • SDP810 (respiratory flow, I²C)  │
+│  • SDP810-500Pa (resp. flow, I²C)  │
 │  • ICM-20948 (9-axis IMU, I²C)     │
-│  • GSR module (EDA, Analog)         │
+│  • CJMCU-6701 GSR module (Analog)   │
 │  • Li-Po 1200mAh battery (503759)   │
 │  • TP4056 Type-C + BMS              │
 │  • 5×7 cm perfboard                 │
@@ -56,16 +56,16 @@ The system is split into two wearable components:
 
 | Sensor | Measurement | Bus | Address | Validated result |
 |--------|------------|-----|---------|-----------------|
-| **ICM-20948** | 9-axis IMU (accel / gyro / mag) | I²C | 0x68 | ~1.00 g at rest, rotation detected up to 306 dps |
-| **SCD41** | CO₂ + temperature + humidity | I²C | 0x62 | 485 ppm outdoors, 2036 ppm confined — confinement effect confirmed |
-| **GSR / EDA** | Skin conductance (stress) | Analog | GPIO32 | Baseline calibrated, stress delta detected — 100kΩ pull-up (1MΩ final) |
+| **ICM-20948** | 9-axis IMU (accel / gyro / mag) | I²C | 0x68 | ~1.00 g at rest, 306 dps peak — AD0 pinned to GND (stable) |
+| **SCD41** | CO₂ + temperature + humidity | I²C | 0x62 | 485 ppm outdoors → 2036 ppm confined — confinement effect confirmed |
+| **CJMCU-6701 GSR** | Skin conductance (EDA/stress) | Analog | GPIO32 | Baseline calibrated, stress delta detected — module with integrated conditioning circuit, electrodes soldered |
 
 ### Received — pending test ⏳
 
 | Sensor | Measurement | Bus | Notes |
 |--------|------------|-----|-------|
-| **MAX30003** | ECG (cardiac signal) | SPI | — |
-| **SDP810** | Respiratory flow | I²C | — |
+| **CJMCU-30003 (MAX30003)** | ECG (cardiac signal) | SPI | +5V supply, 3.3V logic — level shifter TBC |
+| **SDP810-500Pa** | Respiratory flow | I²C | 0x25 — next to integrate |
 | **TMP117** | Skin temperature | I²C | 0x48 |
 
 ---
@@ -76,9 +76,9 @@ The system is split into two wearable components:
 
 - **Microcontroller**: ESP32 Dev Module
 - **Power**: Li-Po 3.7V 1200mAh (503759) + TP4056 Type-C + BMS
-- **I²C bus**: GPIO21 (SDA) / GPIO22 (SCL) — shared bus, 400kHz
-- **SPI**: MAX30003 (ECG)
-- **Analog**: GSR/EDA — GPIO32 + 100kΩ pull-up to 3.3V (1MΩ in final version)
+- **I²C bus**: GPIO21 (SDA) / GPIO22 (SCL) — shared bus, 400kHz — AD0 pinned on ICM-20948
+- **SPI**: CJMCU-30003 (MAX30003 ECG) — +5V supply
+- **Analog**: CJMCU-6701 GSR — GPIO32, +5V supply, integrated signal conditioning
 - **Mechanical support**: 5×7 cm perfboard (HANS box)
 
 ### I²C bus — addresses
@@ -86,9 +86,9 @@ The system is split into two wearable components:
 | Address | Sensor |
 |---------|--------|
 | 0x62 | SCD41 |
-| 0x68 | ICM-20948 |
+| 0x68 | ICM-20948 (AD0 → GND) |
+| 0x25 | SDP810-500Pa |
 | 0x48 | TMP117 |
-| — | SDP810 (address TBC) |
 
 ### Software Stack
 
@@ -106,14 +106,22 @@ Multi-sensor non-blocking loop — all sensors run independently via `millis()`:
 
 | Sensor | Rate | Notes |
 |--------|------|-------|
-| ICM-20948 | 100 Hz | Sustained alert filter: 80 dps / 2.5G over 50ms |
-| GSR / EDA | 50 Hz | Delta-based stress detection, boot calibration |
+| ICM-20948 | 100 Hz | Sustained alert filter: 80 dps / 2.5G over 50ms — AD0 fix applied |
+| CJMCU-6701 GSR | 50 Hz | Delta-based stress detection, 5s boot calibration with electrodes on skin |
 | SCD41 | 0.2 Hz | CO₂ / temp / humidity |
 | SDP810 | 25 Hz | Pending integration |
 | TMP117 | 1 Hz | Pending integration |
 | MAX30003 | 512 Hz | Pending integration |
 
 IMU watchdog + auto-recovery on I²C disconnect.
+
+---
+
+## Known Hardware Notes
+
+- **ICM-20948 AD0**: must be wired to GND to lock I²C address at 0x68. Floating AD0 causes random address switching (0x68 ↔ 0x69) and I²C bus corruption.
+- **CJMCU-30003**: marked +5V — verify logic level compatibility with ESP32 3.3V before SPI wiring.
+- **SDP810-500Pa**: bare sensor (no breakout board) — direct pad soldering required.
 
 ---
 
@@ -155,7 +163,7 @@ pio run --target upload
 pio device monitor
 ```
 
-> On first boot, the system waits 5 seconds for GSR electrodes to be placed before calibrating the baseline. Stay calm during calibration.
+> On first boot, the system waits 5 seconds for GSR electrodes to be placed on skin before calibrating the baseline. Stay calm during calibration.
 
 ---
 
@@ -163,12 +171,12 @@ pio device monitor
 
 | Data | Sensor | Bus | Rate | Unit |
 |------|--------|-----|------|------|
-| G-force / Acceleration | ICM-20948 | I²C | 100 Hz | g |
-| Angular velocity | ICM-20948 | I²C | 100 Hz | °/s |
-| Magnetic field | ICM-20948 | I²C | 100 Hz | µT |
+| G-force / Acceleration (X/Y/Z) | ICM-20948 | I²C | 100 Hz | g |
+| Angular velocity (X/Y/Z) | ICM-20948 | I²C | 100 Hz | °/s |
+| Magnetic field (X/Y/Z) | ICM-20948 | I²C | 100 Hz | µT |
 | CO₂ | SCD41 | I²C | 0.2 Hz | ppm |
-| Temperature + humidity | SCD41 | I²C | 0.2 Hz | °C / % |
-| Skin conductance (EDA) | GSR | Analog | 50 Hz | raw / kΩ / delta |
+| Ambient temperature + humidity | SCD41 | I²C | 0.2 Hz | °C / % |
+| Skin conductance (EDA) | CJMCU-6701 | Analog | 50 Hz | raw / MΩ / delta |
 | ECG | MAX30003 | SPI | 512 Hz | mV |
 | Respiratory flow | SDP810 | I²C | 25 Hz | L/min |
 | Skin temperature | TMP117 | I²C | 1 Hz | °C |
@@ -180,19 +188,20 @@ pio device monitor
 ### Phase 1 — Sensor Validation (Q1–Q2 2026)
 - [x] Full hardware architecture defined
 - [x] Components ordered and received
-- [x] ICM-20948 validated — 1.00 g at rest, 306 dps peak detected
+- [x] ICM-20948 validated — 1.00 g at rest, 306 dps peak, AD0 fix applied
 - [x] SCD41 validated — 485 ppm outdoors, confinement effect confirmed
-- [x] GSR/EDA validated — baseline calibration, stress delta working
+- [x] GSR/EDA validated — CJMCU-6701 module, electrodes soldered, stress delta working
 - [x] Multi-sensor non-blocking firmware (SCD41 + ICM-20948 + GSR)
 - [x] IMU watchdog + auto-recovery
-- [x] IMU sustained alert filter (anti-vibration)
-- [ ] Validate SDP810 (respiratory flow)
+- [x] IMU sustained alert filter (anti-vibration, 50ms debounce)
+- [x] I²C bus stability — AD0 pin fix on ICM-20948
+- [ ] Validate SDP810-500Pa (respiratory flow)
 - [ ] Validate TMP117 (skin temperature)
-- [ ] Validate MAX30003 (ECG)
+- [ ] Validate MAX30003 / CJMCU-30003 (ECG)
 
 ### Phase 2 — Integration (Q2–Q3 2026)
 - [ ] Full 6-sensor merged firmware
-- [ ] MQTT transmission via WiFi bursts
+- [ ] MQTT transmission via WiFi bursts (200ms)
 - [ ] Soldering on 5×7 cm perfboard
 - [ ] Physical integration: balaclava + HANS box
 - [ ] Minimal real-time dashboard (React + WebSocket)
@@ -200,7 +209,7 @@ pio device monitor
 ### Phase 3 — Field MVP (Q3–Q4 2026)
 - [ ] Field tests (simulator / karting)
 - [ ] Python backend — signal processing + derived indicators
-- [ ] Stress Index, Fatigue Index, G-load accumulation
+- [ ] Stress Index (ECG + EDA), Fatigue Index (HRV + Temp + CO₂), G-load accumulation
 - [ ] Full documentation
 
 ### Phase 4 — Optimization (2027)
@@ -220,6 +229,7 @@ pio device monitor
 | CO₂ accuracy | ±50 ppm | ✅ Validated (485 ppm outdoors) |
 | G-force accuracy | ±0.1 g | ✅ Validated (1.00 g at rest) |
 | GSR stress detection | delta > 200 | ✅ Validated |
+| I²C bus stability | No random disconnect | ✅ Fixed (AD0 → GND) |
 | Total weight | < 150g | To measure |
 | Driver comfort | ≥ 7/10 | To test |
 
@@ -248,5 +258,5 @@ Personal project — 2026
 **"Sense the race, feel the data"**
 
 *Last updated: April 2026*  
-*Version: 0.3.0-alpha*  
+*Version: 0.3.1-alpha*  
 *Status: Active development — 3/6 sensors validated*

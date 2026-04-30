@@ -268,10 +268,10 @@ void readGsr() {
 
   gsrData.voltage = gsrData.raw * (3.3f / 4095.0f);
 
-  // Resistance with 100kΩ pull-up (1MΩ in final version)
-  if (gsrData.voltage > 0.01f) {
-    gsrData.resistance = 100.0f * (3.3f / gsrData.voltage - 1.0f);
-  }
+// Résistance avec pull-up 1MΩ
+if (gsrData.voltage > 0.01f) {
+  gsrData.resistance = 1000.0f * (3.3f / gsrData.voltage - 1.0f);
+}
 
   gsrData.delta = gsrData.raw - gsrData.baseline;
   gsrData.ts    = millis();
