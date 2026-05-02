@@ -24,7 +24,7 @@
 #define MAX30003_SCK   14
 #define MAX30003_MOSI  25
 #define MAX30003_MISO  13
-#define MAX30003_FCLK  26   // GPIO26 → pin FCLK du CJMCU-30003 (fil à brancher)
+#define MAX30003_FCLK  26   // GPIO26 → pin FCLK du CJMCU-30003
 
 // ── Debug flags ──────────────────────────────────────
 #define DEBUG_IMU   false
@@ -41,9 +41,9 @@ const uint32_t IMU_INTERVAL_MS     = 10;
 const uint32_t GSR_INTERVAL_MS     = 20;
 const uint32_t SDP810_INTERVAL_MS  = 40;
 const uint32_t TMP117_INTERVAL_MS  = 1000;
-const uint32_t ECG_INTERVAL_MS     = 10;
+const uint32_t ECG_INTERVAL_MS     = 50;   // 20Hz — réduit pour laisser respirer le bus I²C
 const uint32_t SUMMARY_INTERVAL    = 2000;
-const uint32_t IMU_TIMEOUT_MS      = 2000;
+const uint32_t IMU_TIMEOUT_MS      = 10000;
 
 uint32_t lastScd41Read  = 0;
 uint32_t lastImuRead    = 0;
@@ -420,11 +420,11 @@ void initMax30003() {
   uint32_t cnfg_gen = max30003ReadReg(0x10);
   Serial.printf("[MAX30003] CNFG_GEN readback=0x%06X\n", cnfg_gen);
 
-  // Attendre que le PLL soit verrouillé — max 3 secondes
+  // Attendre que le PLL soit verrouillé — max 10 secondes
   Serial.print("[MAX30003] Attente PLL...");
   uint32_t pllStart = millis();
   bool pllOk = false;
-  while (millis() - pllStart < 3000) {
+  while (millis() - pllStart < 10000) {
     uint32_t st = max30003ReadReg(0x01);
     if (!(st & 0x000100)) {
       Serial.println(" OK");
@@ -457,31 +457,30 @@ void initMax30003() {
 void readMax30003() {
   if (!ecgOk) return;
 
-  // DEBUG — à retirer après validation
-  uint32_t status = max30003ReadReg(0x01);
-  uint32_t fifo   = max30003ReadReg(0x21);
-  uint8_t  etag   = (fifo >> 3) & 0x07;
+  // Vider le FIFO — lire jusqu'à ETAG=2 (EOF) ou max 32 samples
+  for (int i = 0; i < 32; i++) {
+    uint32_t fifo = max30003ReadReg(0x21);
+    uint8_t  etag = (fifo >> 3) & 0x07;
 
-  Serial.printf("[ECG DEBUG] STATUS=0x%06X | FIFO=0x%06X | ETAG=%d\n", status, fifo, etag);
+    if (etag == 0x07) {
+      // FIFO overflow — reset et sortir
+      max30003WriteReg(0x0A, 0x000000);
+      break;
+    }
+    if (etag == 0x06) break; // FIFO vide
 
-  // ETAG=7 : overflow → reset FIFO
-  if (etag == 0x07) {
-    Serial.println("[MAX30003] FIFO overflow — reset");
-    max30003WriteReg(0x0A, 0x000000);
-    return;
+    int32_t raw = (int32_t)(fifo >> 6);
+    if (raw & 0x20000) raw |= 0xFFFC0000; // sign extend 18-bit
+
+    ecgData.raw   = raw;
+    ecgData.mv    = (float)raw * (1.0f / 131072.0f) * 1000.0f;
+    ecgData.ts    = millis();
+    ecgData.valid = true;
+
+    Serial.printf("ECG,%ld,%ld\n", ecgData.ts, ecgData.raw);
+
+    if (etag == 0x02 || etag == 0x03) break; // EOF — dernier sample disponible
   }
-  // ETAG=6 : FIFO vide, normal
-  if (etag == 0x06) return;
-
-  // Extraire valeur ECG 18-bit signée — bits [23:6]
-  int32_t raw = (int32_t)(fifo >> 6);
-  if (raw & 0x20000) raw |= 0xFFFC0000; // sign extend
-
-  // Conversion en mV
-  ecgData.raw   = raw;
-  ecgData.mv    = (float)raw * (1.0f / 131072.0f) * 1000.0f;
-  ecgData.ts    = millis();
-  ecgData.valid = true;
 }
 
 // ════════════════════════════════════════════════════
@@ -551,10 +550,11 @@ void setup() {
   delay(1000);
 
   // ── FCLK 32.768kHz pour MAX30003 ──
-  // Un fil doit être branché entre GPIO26 de l'ESP32 et la pin FCLK du CJMCU-30003
-  ledcSetup(0, 32768, 1);           // canal 0, 32768Hz, résolution 1 bit
-  ledcAttachPin(MAX30003_FCLK, 0);  // GPIO26
-  ledcWrite(0, 1);                  // 50% duty cycle
+  // GPIO26 → pin FCLK du CJMCU-30003
+  // Ordre correct : setup → attach → write
+  ledcSetup(0, 32768, 8);          // canal 0, 32768Hz, résolution 8 bits
+  ledcAttachPin(MAX30003_FCLK, 0); // attacher GPIO26 au canal 0
+  ledcWrite(0, 128);               // 50% duty cycle (128/256)
   delay(100);
 
   Serial.println("\n=== BalaSense V1 — init ===\n");
