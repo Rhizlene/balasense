@@ -58,10 +58,10 @@ The system is split into two wearable components:
 |--------|------------|-----|---------|-----------------|
 | **ICM-20948** | 9-axis IMU (accel / gyro / mag) | I²C | 0x68 | ~1.00 g at rest, 306 dps peak — AD0 pinned to GND (stable) |
 | **SCD41** | CO₂ + temperature + humidity | I²C | 0x62 | 485 ppm outdoors → 2036 ppm confined — helmet confinement effect confirmed |
-| **CJMCU-6701 GSR** | Skin conductance (EDA/stress) | Analog | GPIO32 | Baseline calibrated, stress delta detected — integrated conditioning circuit, electrodes soldered directly on PCB pads |
-| **SDP810-500Pa** | Respiratory flow | I²C | 0x25 | P=162→210 Pa strong breath, P=−147 Pa suction — breathing cycle visible through 3mm silicone tube |
+| **CJMCU-6701 GSR** | Skin conductance (EDA/stress) | Analog | GPIO32 | Baseline calibrated, stress delta detected — integrated conditioning circuit, electrodes soldered |
+| **SDP810-500Pa** | Respiratory flow | I²C | 0x25 | P=162→210 Pa strong breath — breathing cycle visible through 3mm silicone tube |
 | **TMP117** | Skin temperature | I²C | 0x48 | 35.02°C → 35.20°C behind ear — progressive rise confirmed |
-| **MAX30003 (CJMCU-30003)** | ECG cardiac signal | SPI | — | INFO=0x510000 detected, registers configured, FIFO active — ECG acquisition in progress (see notes) |
+| **MAX30003 (CJMCU-30003)** | ECG cardiac signal | SPI | — | R-peak detection active — HR=57 BPM validated at rest, RMSSD pending stable electrode contact |
 
 ---
 
@@ -102,7 +102,7 @@ The system is split into two wearable components:
 - **Backend**: Python FastAPI + MQTT (Mosquitto) — Phase 2
 - **Database**: InfluxDB time-series — Phase 2
 - **Frontend**: React + Recharts — real-time WebSocket dashboard — Phase 2
-- **Protocols**: Wi-Fi bursts (200ms) → MQTT → WebSocket
+- **Protocols**: WiFi bursts → MQTT → WebSocket (real-time stand); BLE (standalone/simracing sessions)
 
 ---
 
@@ -113,46 +113,96 @@ Multi-sensor non-blocking loop — all sensors run independently via `millis()`:
 | Sensor | Rate | Notes |
 |--------|------|-------|
 | ICM-20948 | 100 Hz | Sustained alert filter: 80 dps / 2.5G over 50ms — AD0 fix applied |
-| CJMCU-6701 GSR | 50 Hz | Delta-based stress detection, 5s boot calibration with electrodes on skin |
-| SCD41 | 0.2 Hz | CO₂ / temp / humidity |
-| SDP810 | 25 Hz | Continuous differential pressure mode |
-| TMP117 | 1 Hz | Skin temperature behind ear |
-| MAX30003 | 512 Hz | ECG — FIFO read, ETAG validation, sign extension 18-bit |
+| CJMCU-6701 GSR | 50 Hz | Tonic/phasic EDA decomposition, SCR detection, conductance in µS |
+| SCD41 | 0.2 Hz | CO₂ / temp / humidity + slope ppm/min + absolute humidity + dew point |
+| SDP810 | 25 Hz | Breathing rate (BrPM), I:E ratio, amplitude, apnea detection |
+| TMP117 | 1 Hz | Skin temperature + thermal drift rate (°C/min) |
+| MAX30003 | 512 Hz | ECG FIFO — R-peak detection, adaptive threshold, RR intervals, HR, RMSSD, pNN50 |
 
-IMU watchdog + auto-recovery on I²C disconnect.  
-SPI initialised before Wire in `setup()` to prevent I²C bus conflict.
+IMU watchdog + auto-recovery on I²C disconnect. SPI initialised before Wire in `setup()` to prevent I²C bus conflict.
+
+---
+
+## Derived Metrics
+
+All computed in firmware, output every second via `DATA` CSV line:
+
+| Metric | Source | Unit | Notes |
+|--------|--------|------|-------|
+| HR (heart rate) | ECG RR intervals | BPM | Adaptive R-peak detection with coherence rejection |
+| RMSSD | ECG RR buffer (20 beats) | ms | Parasympathetic HRV index — pending stable electrode contact |
+| pNN50 | ECG RR buffer | % | Proportion of successive RR diffs > 50ms |
+| BrPM | SDP810 zero-crossing | breaths/min | 5-breath rolling average |
+| I:E ratio | SDP810 | — | Inspiratory/expiratory time ratio |
+| Skin conductance | GSR ADC | µS | Converted from resistance |
+| Tonic / Phasic EDA | GSR IIR filter | µS | Tonic = slow baseline, phasic = fast stress response |
+| SCR/min | GSR phasic threshold | events/min | Skin conductance responses per minute |
+| CO₂ slope | SCD41 delta | ppm/min | Ventilation efficiency indicator |
+| Absolute humidity | SCD41 Magnus formula | g/m³ | Breath moisture load |
+| Dew point | SCD41 Lawrence approx. | °C | |
+| Skin temp delta | TMP117 vs boot | °C | Thermal load accumulation |
+| dT/dt | TMP117 | °C/min | Rate of skin temperature change |
+| G lateral / longitudinal | ICM-20948 axes | g | Cornering vs braking load — separate axes |
+| Pitch / Roll | ICM-20948 complementary filter | ° | 98% gyro + 2% accelerometer |
+| Jerk | IMU totalG derivative | g/s | Rate of G-force change |
+| Cervical cumul | Integrated \|gyrZ\| | ° | Cumulative neck rotation over session |
+
+---
+
+## Data Capture
+
+Structured CSV output — one `DATA` line per second, capturable with:
+
+```bash
+pio device monitor --port COM4 --baud 115200 | findstr /B "DATA" > session.csv
+```
+
+CSV columns:
+```
+ts_ms, hr_bpm, rmssd_ms, pnn50_pct, rr_last_ms,
+br_bpm, ie_ratio, breath_amp_pa, apnea,
+gsr_cond_us, gsr_tonic_us, gsr_phasic_us, scr_per_min,
+skin_temp_c, tmp_delta_boot_c, tmp_dtdt_c_min,
+co2_ppm, co2_slope_ppm_min, abs_hum_gm3, dew_point_c,
+g_total, g_lat, g_long, jerk_g_s, pitch_deg, roll_deg, rot_dps, cervical_cumul_deg
+```
+
+Python import:
+```python
+import pandas as pd
+df = pd.read_csv('session.csv', header=None, names=[...])
+```
 
 ---
 
 ## Known Hardware Notes
 
 - **ICM-20948 AD0**: must be wired to GND to lock I²C address at 0x68. Floating AD0 causes random switching (0x68 ↔ 0x69) and I²C bus corruption.
-- **CJMCU-30003 VCC**: must be connected to ESP32 VIN (5V USB). The onboard A2V2 regulator generates 2.2V internally. SPI signals work at 3.3V logic directly — no level shifter needed.
-- **CJMCU-30003 FCLK**: no onboard 32.768kHz oscillator on this module variant. External clock required — generated by ESP32 GPIO26 using LEDC (ledcSetup / ledcAttachPin / ledcWrite). Wire GPIO26 → FCLK pin.
-- **CJMCU-30003 ECG electrodes**: jack 3.5mm TRS connector present. ECGP and ECGN identified via multimetre continuity test. Wires soldered directly onto jack pads — no plug needed.
-- **GPIO12 ESP32**: strapping pin — never use for MOSI or any line that can be HIGH at boot. Use GPIO25 for MOSI instead.
-- **SPI before Wire**: `SPI.begin()` must be called before `Wire.begin()` in `setup()` to avoid `[W][Wire.cpp:301] begin(): Bus already started in Master Mode` warning and I²C instability.
-- **SDP810-500Pa**: bare sensor without breakout board — through-hole leads soldered with direct wires. Two pneumatic ports on top — do not obstruct. I²C address: 0x25.
-- **TMP117**: Adafruit breakout, integrated 10kΩ pull-ups, ADDR unconnected = 0x48.
-- **CJMCU-6701 GSR**: powered at +5V (VIN), OUT on GPIO32. Two silver GSR pads on back of PCB for direct skin contact or textile electrode wires. Integrated pull-up — no external resistor needed.
+- **CJMCU-30003 VCC**: must be connected to ESP32 VIN (5V USB). SPI signals work at 3.3V logic directly — no level shifter needed.
+- **CJMCU-30003 FCLK**: no onboard 32.768kHz oscillator on this module variant. External clock required — generated by ESP32 GPIO26 using LEDC. Wire GPIO26 → FCLK pin.
+- **CJMCU-30003 ECG electrodes**: ECGP and ECGN identified via multimetre continuity on 3.5mm TRS jack. Wires soldered directly onto jack pads.
+- **ECG electrode contact**: conductive gel recommended for temporal placement. Signal stabilises after ~45s contact time on dry skin.
+- **GPIO12 ESP32**: strapping pin — never use for MOSI. Use GPIO25 instead.
+- **SPI before Wire**: `SPI.begin()` must be called before `Wire.begin()` in `setup()`.
+- **SDP810-500Pa**: bare sensor, through-hole leads soldered directly. I²C address: 0x25.
+- **TMP117**: Adafruit breakout, ADDR unconnected = 0x48.
+- **CJMCU-6701 GSR**: powered at +5V (VIN), OUT on GPIO32. Integrated pull-up — no external resistor needed.
 
 ---
 
-## MAX30003 ECG — Debug Log
-
-Current status: **FIFO active, PLL lock in progress**
+## MAX30003 ECG — Status
 
 | Step | Status | Notes |
 |------|--------|-------|
-| SPI communication | ✅ | INFO=0x510000 — chip detected (revision variant of 0x503020) |
-| Register write/read | ✅ | CNFG_GEN readback=0x081007 confirmed |
-| FCLK external clock | ✅ | GPIO26 → FCLK via LEDC 32.768kHz |
-| PLL lock | ⏳ | PLLINT=0 observed intermittently — lock takes ~20s on this module |
-| FIFO data | ⏳ | ETAG=0 (valid) observed, raw=0 — MISO line under investigation |
-| ECG with electrodes | ❌ | Pending MISO fix |
-| R-peak detection | ❌ | Phase 2 |
-
-**Open issue**: MISO/SDO line reads 0V — SDO may not be driving correctly when CS is high (expected three-state behaviour) or connection issue. To be resolved next session.
+| SPI communication | ✅ | INFO=0x510000 — chip detected |
+| CNFG_GEN readback | ✅ | 0x081007 confirmed |
+| FCLK external clock | ✅ | GPIO26 → FCLK via LEDC 32.768kHz, 8-bit resolution |
+| PLL lock | ✅ | Locks within 3s with 8-bit LEDC |
+| FIFO data | ✅ | ETAG=0/2 valid samples, sign extension 18-bit |
+| ECG electrodes | ✅ | ECGP/ECGN soldered, TENS 32mm snap electrodes connected |
+| R-peak detection | ✅ | Adaptive threshold + coherence rejection — HR validated |
+| HR computation | ✅ | 57 BPM at rest confirmed |
+| RMSSD / pNN50 | ⏳ | Pending stable electrode contact (conductive gel ordered) |
 
 ---
 
@@ -161,17 +211,16 @@ Current status: **FIFO active, PLL lock in progress**
 ```
 balasense/
 │
-├── firmware/                 # ESP32 embedded code
+├── firmware/
 │   ├── src/
-│   │   ├── main.cpp          # Multi-sensor non-blocking loop (6 sensors)
-│   │   └── utils/
+│   │   └── main.cpp          # Multi-sensor non-blocking loop + all derived metrics
 │   └── platformio.ini
 │
-├── doc/                      # Architecture documentation
+├── doc/
 │   ├── balasense-architecture_securite_pilote.odt
 │   └── BALASENSE_architecture_capteurs.docx
 │
-├── hardware/                 # Schematics
+├── hardware/
 │
 ├── .gitignore
 └── README.md
@@ -183,7 +232,6 @@ balasense/
 
 ### Prerequisites
 - PlatformIO IDE (VS Code)
-- Git
 
 ### Flash firmware
 ```bash
@@ -195,7 +243,9 @@ pio device monitor
 
 > On first boot, the system waits 5 seconds for GSR electrodes to be placed on skin before calibrating the baseline. Stay calm during calibration.
 
-> MAX30003 requires a 32.768kHz clock on GPIO26 wired to the FCLK pin. The ESP32 generates this automatically via LEDC on boot.
+> MAX30003 requires GPIO26 wired to the FCLK pin — the ESP32 generates the 32.768kHz clock automatically on boot.
+
+> ECG electrodes require ~45s contact time on temples before stable signal. Conductive gel improves signal quality significantly.
 
 ---
 
@@ -203,14 +253,14 @@ pio device monitor
 
 | Data | Sensor | Bus | Rate | Unit |
 |------|--------|-----|------|------|
-| G-force / Acceleration (X/Y/Z) | ICM-20948 | I²C | 100 Hz | g |
-| Angular velocity (X/Y/Z) | ICM-20948 | I²C | 100 Hz | °/s |
-| Magnetic field (X/Y/Z) | ICM-20948 | I²C | 100 Hz | µT |
-| CO₂ | SCD41 | I²C | 0.2 Hz | ppm |
-| Ambient temperature + humidity | SCD41 | I²C | 0.2 Hz | °C / % |
-| Skin conductance (EDA) | CJMCU-6701 | Analog | 50 Hz | raw / MΩ / delta |
-| ECG | MAX30003 | SPI | 512 Hz | mV |
-| Respiratory flow | SDP810 | I²C | 25 Hz | Pa / L/min |
+| G-force X/Y/Z | ICM-20948 | I²C | 100 Hz | g |
+| Angular velocity X/Y/Z | ICM-20948 | I²C | 100 Hz | °/s |
+| Magnetic field X/Y/Z | ICM-20948 | I²C | 100 Hz | µT |
+| Pitch / Roll | ICM-20948 | I²C | 100 Hz | ° |
+| CO₂ + temp + humidity | SCD41 | I²C | 0.2 Hz | ppm / °C / % |
+| Skin conductance (EDA) | CJMCU-6701 | Analog | 50 Hz | µS |
+| ECG + HR + RMSSD | MAX30003 | SPI | 512 Hz | mV / BPM / ms |
+| Respiratory flow + BrPM | SDP810 | I²C | 25 Hz | Pa / breaths/min |
 | Skin temperature | TMP117 | I²C | 1 Hz | °C |
 
 ---
@@ -219,38 +269,32 @@ pio device monitor
 
 ### Phase 1 — Sensor Validation (Q1–Q2 2026)
 - [x] Full hardware architecture defined
-- [x] Components ordered and received
-- [x] ICM-20948 validated — 1.00 g at rest, 306 dps peak, AD0 fix applied
-- [x] SCD41 validated — 485 ppm outdoors, confinement effect confirmed
-- [x] GSR/EDA validated — CJMCU-6701, electrodes soldered, stress delta working
-- [x] SDP810-500Pa validated — breathing cycle visible, P=162→210 Pa strong breath
-- [x] TMP117 validated — 35.02°C → 35.20°C behind ear
-- [x] MAX30003 detected — INFO register, SPI communication, FIFO active
-- [x] Multi-sensor non-blocking firmware (all 6 sensors integrated)
-- [x] IMU watchdog + auto-recovery
-- [x] IMU sustained alert filter (anti-vibration, 50ms debounce)
-- [x] I²C bus stability — AD0 pin fix on ICM-20948
-- [x] SPI/Wire init order fix — SPI before Wire in setup()
-- [x] FCLK external clock — GPIO26 via LEDC 32.768kHz
-- [x] ECG electrodes physically connected — ECGP/ECGN identified and soldered
-- [ ] MAX30003 FIFO reading with live ECG signal — in progress
-- [ ] R-peak detection and HRV calculation
+- [x] ICM-20948 validated — axes, pitch/roll, jerk, cervical cumul
+- [x] SCD41 validated — CO₂ slope, absolute humidity, dew point
+- [x] GSR/EDA validated — tonic/phasic decomposition, SCR detection, µS conversion
+- [x] SDP810-500Pa validated — BrPM, I:E ratio, apnea detection
+- [x] TMP117 validated — thermal drift rate
+- [x] MAX30003 ECG validated — FIFO active, R-peak detection, HR confirmed
+- [x] Multi-sensor non-blocking firmware (all 6 sensors + all derived metrics)
+- [x] Structured CSV data output for offline analysis
+- [ ] RMSSD/pNN50 validation — pending conductive gel
+- [ ] WiFi JSON transmission — in progress
 
 ### Phase 2 — Integration (Q2–Q3 2026)
-- [ ] MQTT transmission via WiFi bursts (200ms)
+- [ ] WiFi JSON packets → MQTT → FastAPI backend
 - [ ] Soldering on 5×7 cm perfboard
 - [ ] Physical integration: balaclava + HANS box
-- [ ] Minimal real-time dashboard (React + WebSocket)
-- [ ] Derived indicators: Stress Index (ECG+EDA), Fatigue Index (HRV+Temp+CO₂), G-load
+- [ ] Real-time dashboard (React + Recharts + WebSocket)
+- [ ] Derived indices: Stress Index (ECG+EDA), Fatigue Index (HRV+Temp+CO₂), G-load accumulation
 
 ### Phase 3 — Field MVP (Q3–Q4 2026)
 - [ ] Field tests (simulator / karting)
-- [ ] Python backend — signal processing
+- [ ] Python signal processing backend
 - [ ] Full documentation
 
 ### Phase 4 — Optimization (2027)
 - [ ] Custom miniaturized PCB
-- [ ] ML algorithms (automatic fatigue detection)
+- [ ] ML fatigue detection
 - [ ] Degraded mode & failsafe
 
 ---
@@ -259,14 +303,15 @@ pio device monitor
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Sensors validated | 6/6 | ✅ 6/6 hardware validated |
-| ECG live signal | R-peak detected | ⏳ FIFO active, signal pending |
+| Sensors validated | 6/6 | ✅ 6/6 |
+| ECG R-peak detection | Active | ✅ HR=57 BPM confirmed |
+| RMSSD computation | < 100ms at rest | ⏳ Pending stable contact |
+| Breathing rate | ±1 BrPM | ✅ 15 BrPM validated |
+| CO₂ accuracy | ±50 ppm | ✅ Validated |
+| G-force accuracy | ±0.1 g | ✅ Validated |
+| GSR stress detection | SCR event detection | ✅ Validated |
+| WiFi transmission | < 500ms latency | ⏳ Phase 2 |
 | Battery life | ≥ 2h | To measure |
-| Transmission latency | < 500ms | To validate |
-| CO₂ accuracy | ±50 ppm | ✅ Validated (485 ppm outdoors) |
-| G-force accuracy | ±0.1 g | ✅ Validated (1.00 g at rest) |
-| GSR stress detection | delta > 200 | ✅ Validated |
-| I²C bus stability | No random disconnect | ✅ Fixed (AD0 → GND) |
 | Total weight | < 150g | To measure |
 | Driver comfort | ≥ 7/10 | To test |
 
@@ -303,8 +348,7 @@ Personal project — 2026
 
 ---
 
-**"Sense the race, feel the data"**
 
 *Last updated: May 2026*  
-*Version: 0.4.0-alpha*  
-*Status: Active development — 6/6 sensors validated, ECG acquisition in progress*
+*Version: 0.5.0-alpha*  
+*Status: Active development — 6/6 sensors validated, ECG R-peak active, Phase 2 WiFi transmission in progress*
