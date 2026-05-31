@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/branding/logo_bala.jpg" alt="BalaSense Logo" width="400"/>
+</p>
+
 # BalaSense - Smart Racing Biometric Monitor
 
 > Embedded biometric monitoring system for motorsport drivers
@@ -102,7 +106,14 @@ The system is split into two wearable components:
 - **Backend**: Python FastAPI + MQTT (Mosquitto) — Phase 2
 - **Database**: InfluxDB time-series — Phase 2
 - **Frontend**: React + Recharts — real-time WebSocket dashboard — Phase 2
-- **Protocols**: WiFi bursts → MQTT → WebSocket (real-time stand); BLE (standalone/simracing sessions)
+- **Protocols**: WiFi → MQTT → WebSocket (real-time stand); BLE (standalone/simracing sessions)
+
+### MQTT Topics
+
+| Topic | Rate | Format | Description |
+|-------|------|--------|-------------|
+| `balasense/summary` | 1 Hz | JSON | All derived metrics — HR, GSR, CO₂, IMU, breathing, thermal |
+| `balasense/ecg` | 20 Hz | JSON | ECG waveform `{"t": ts_ms, "r": raw}` |
 
 ---
 
@@ -119,13 +130,13 @@ Multi-sensor non-blocking loop — all sensors run independently via `millis()`:
 | TMP117 | 1 Hz | Skin temperature + thermal drift rate (°C/min) |
 | MAX30003 | 512 Hz | ECG FIFO — R-peak detection, adaptive threshold, RR intervals, HR, RMSSD, pNN50 |
 
-IMU watchdog + auto-recovery on I²C disconnect. SPI initialised before Wire in `setup()` to prevent I²C bus conflict.
+IMU watchdog + auto-recovery on I²C disconnect. SPI initialised before Wire in `setup()` to prevent I²C bus conflict. WiFi + MQTT initialised after all sensors to prevent I²C interference.
 
 ---
 
 ## Derived Metrics
 
-All computed in firmware, output every second via `DATA` CSV line:
+All computed in firmware, published via MQTT `balasense/summary` and CSV `DATA` line:
 
 | Metric | Source | Unit | Notes |
 |--------|--------|------|-------|
@@ -147,11 +158,19 @@ All computed in firmware, output every second via `DATA` CSV line:
 | Jerk | IMU totalG derivative | g/s | Rate of G-force change |
 | Cervical cumul | Integrated \|gyrZ\| | ° | Cumulative neck rotation over session |
 
+Planned derived indices — computed in FastAPI backend (Phase 2):
+
+| Index | Formula | Purpose |
+|-------|---------|---------|
+| Stress Index | HR + GSR phasic (sliding window) | Cognitive load indicator |
+| Fatigue Index | RMSSD + CO₂ + skin temp | Progressive fatigue detection |
+| Cardio-respiratory coherence | ECG + SDP810 correlation | Autonomic regulation quality |
+
 ---
 
 ## Data Capture
 
-Structured CSV output — one `DATA` line per second, capturable with:
+Structured CSV output — one `DATA` line per second:
 
 ```bash
 pio device monitor --port COM4 --baud 115200 | findstr /B "DATA" > session.csv
@@ -167,12 +186,6 @@ co2_ppm, co2_slope_ppm_min, abs_hum_gm3, dew_point_c,
 g_total, g_lat, g_long, jerk_g_s, pitch_deg, roll_deg, rot_dps, cervical_cumul_deg
 ```
 
-Python import:
-```python
-import pandas as pd
-df = pd.read_csv('session.csv', header=None, names=[...])
-```
-
 ---
 
 ## Known Hardware Notes
@@ -184,6 +197,7 @@ df = pd.read_csv('session.csv', header=None, names=[...])
 - **ECG electrode contact**: conductive gel recommended for temporal placement. Signal stabilises after ~45s contact time on dry skin.
 - **GPIO12 ESP32**: strapping pin — never use for MOSI. Use GPIO25 instead.
 - **SPI before Wire**: `SPI.begin()` must be called before `Wire.begin()` in `setup()`.
+- **WiFi after sensors**: `initWifi()` must be called after all sensor `init*()` functions to prevent I²C interference causing Guru Meditation crash.
 - **SDP810-500Pa**: bare sensor, through-hole leads soldered directly. I²C address: 0x25.
 - **TMP117**: Adafruit breakout, ADDR unconnected = 0x48.
 - **CJMCU-6701 GSR**: powered at +5V (VIN), OUT on GPIO32. Integrated pull-up — no external resistor needed.
@@ -202,6 +216,7 @@ df = pd.read_csv('session.csv', header=None, names=[...])
 | ECG electrodes | ✅ | ECGP/ECGN soldered, TENS 32mm snap electrodes connected |
 | R-peak detection | ✅ | Adaptive threshold + coherence rejection — HR validated |
 | HR computation | ✅ | 57 BPM at rest confirmed |
+| WiFi/MQTT transmission | ✅ | PubSubClient — summary 1Hz + ECG 20Hz |
 | RMSSD / pNN50 | ⏳ | Pending stable electrode contact (conductive gel ordered) |
 
 ---
@@ -213,15 +228,17 @@ balasense/
 │
 ├── firmware/
 │   ├── src/
-│   │   └── main.cpp          # Multi-sensor non-blocking loop + all derived metrics
+│   │   └── main.cpp          # Multi-sensor non-blocking loop + derived metrics + WiFi/MQTT
 │   └── platformio.ini
+│
+├── backend/                  # Phase 2 — Python FastAPI + Mosquitto
+├── frontend/                 # Phase 2 — React + Recharts dashboard
 │
 ├── doc/
 │   ├── balasense-architecture_securite_pilote.odt
 │   └── BALASENSE_architecture_capteurs.docx
 │
 ├── hardware/
-│
 ├── .gitignore
 └── README.md
 ```
@@ -232,6 +249,8 @@ balasense/
 
 ### Prerequisites
 - PlatformIO IDE (VS Code)
+- Smartphone hotspot named `BalaSense_Hotspot` (password: `balasense2026`)
+- Mosquitto broker running on laptop at `192.168.43.1:1883`
 
 ### Flash firmware
 ```bash
@@ -247,6 +266,8 @@ pio device monitor
 
 > ECG electrodes require ~45s contact time on temples before stable signal. Conductive gel improves signal quality significantly.
 
+> WiFi is non-blocking — the system runs fully without a network and falls back to serial CSV output.
+
 ---
 
 ## Collected Data
@@ -255,7 +276,6 @@ pio device monitor
 |------|--------|-----|------|------|
 | G-force X/Y/Z | ICM-20948 | I²C | 100 Hz | g |
 | Angular velocity X/Y/Z | ICM-20948 | I²C | 100 Hz | °/s |
-| Magnetic field X/Y/Z | ICM-20948 | I²C | 100 Hz | µT |
 | Pitch / Roll | ICM-20948 | I²C | 100 Hz | ° |
 | CO₂ + temp + humidity | SCD41 | I²C | 0.2 Hz | ppm / °C / % |
 | Skin conductance (EDA) | CJMCU-6701 | Analog | 50 Hz | µS |
@@ -277,19 +297,19 @@ pio device monitor
 - [x] MAX30003 ECG validated — FIFO active, R-peak detection, HR confirmed
 - [x] Multi-sensor non-blocking firmware (all 6 sensors + all derived metrics)
 - [x] Structured CSV data output for offline analysis
+- [x] WiFi + MQTT transmission — summary 1Hz + ECG 20Hz
 - [ ] RMSSD/pNN50 validation — pending conductive gel
-- [ ] WiFi JSON transmission — in progress
 
 ### Phase 2 — Integration (Q2–Q3 2026)
-- [ ] WiFi JSON packets → MQTT → FastAPI backend
+- [ ] Mosquitto broker setup (laptop)
+- [ ] FastAPI backend — MQTT subscribe + WebSocket + derived indices
+- [ ] React dashboard — real-time Recharts + WebSocket
 - [ ] Soldering on 5×7 cm perfboard
 - [ ] Physical integration: balaclava + HANS box
-- [ ] Real-time dashboard (React + Recharts + WebSocket)
-- [ ] Derived indices: Stress Index (ECG+EDA), Fatigue Index (HRV+Temp+CO₂), G-load accumulation
 
 ### Phase 3 — Field MVP (Q3–Q4 2026)
 - [ ] Field tests (simulator / karting)
-- [ ] Python signal processing backend
+- [ ] Python signal processing — Stress Index, Fatigue Index, cardio-respiratory coherence
 - [ ] Full documentation
 
 ### Phase 4 — Optimization (2027)
@@ -310,7 +330,7 @@ pio device monitor
 | CO₂ accuracy | ±50 ppm | ✅ Validated |
 | G-force accuracy | ±0.1 g | ✅ Validated |
 | GSR stress detection | SCR event detection | ✅ Validated |
-| WiFi transmission | < 500ms latency | ⏳ Phase 2 |
+| WiFi MQTT transmission | < 500ms latency | ✅ Integrated |
 | Battery life | ≥ 2h | To measure |
 | Total weight | < 150g | To measure |
 | Driver comfort | ≥ 7/10 | To test |
@@ -325,16 +345,17 @@ platform = espressif32
 board = esp32dev
 framework = arduino
 monitor_speed = 115200
-upload_speed = 921600
+upload_speed 921600
 lib_ldf_mode = deep+
 lib_deps =
-  sparkfun/SparkFun 9DoF IMU Breakout - ICM 20948 @ ^1.3.2
+  sparkfun/SparkFun ICM-20948 IMU Arduino Library @ ^1.3.2
   sensirion/Sensirion I2C SCD4x @ ^0.4.0
   sensirion/Sensirion Core @ ^0.7.0
   adafruit/Adafruit TMP117
   adafruit/Adafruit BusIO
   adafruit/Adafruit Unified Sensor
   bblanchon/ArduinoJson @ ^6.21.5
+  knolleary/PubSubClient @ ^2.8
 build_flags = -D CORE_DEBUG_LEVEL=3 -D CONFIG_ARDUHAL_LOG_COLORS
 ```
 
@@ -348,7 +369,8 @@ Personal project — 2026
 
 ---
 
+**"Sense the race, feel the data"**
 
 *Last updated: May 2026*  
-*Version: 0.5.0-alpha*  
-*Status: Active development — 6/6 sensors validated, ECG R-peak active, Phase 2 WiFi transmission in progress*
+*Version: 0.6.0-alpha*  
+*Status: Active development — Phase 1 complete, Phase 2 backend in progress*
